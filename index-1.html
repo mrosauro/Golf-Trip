@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Golf Trip Tracker</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(180deg, #fef3c7 0%, #fed7aa 50%, #fca5a5 100%);
+        }
+        .tab-active {
+            border-bottom: 3px solid #f59e0b;
+            color: #f59e0b;
+        }
+        .palm-bg {
+            background-image: url('data:image/svg+xml,%3Csvg width="60" height="60" xmlns="http://www.w3.org/2000/svg"%3E%3Cpath d="M30 10 Q35 20 30 30 Q25 20 30 10 M30 30 Q40 35 50 30 M30 30 Q20 35 10 30" fill="none" stroke="%23059669" stroke-width="2" opacity="0.1"/%3E%3C/svg%3E');
+        }
+        .desert-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+        .sunset-gradient {
+            background: linear-gradient(135deg, #f59e0b 0%, #dc2626 100%);
+        }
+        .sand-text {
+            color: #92400e;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function GolfTripTracker() {
+            const [activeTab, setActiveTab] = useState('courses');
+            const [players, setPlayers] = useState([]);
+            const [rounds, setRounds] = useState([]);
+            const [courses, setCourses] = useState([]);
+            const [scores, setScores] = useState({});
+            const [expenses, setExpenses] = useState([]);
+            const [bets, setBets] = useState([]);
+            const [newPlayerName, setNewPlayerName] = useState('');
+            const [newPlayerHandicap, setNewPlayerHandicap] = useState('');
+            const [newPlayerGHIN, setNewPlayerGHIN] = useState('');
+
+            // Load data from localStorage on mount
+            useEffect(() => {
+                const savedData = localStorage.getItem('golfTripData');
+                if (savedData) {
+                    const data = JSON.parse(savedData);
+                    setPlayers(data.players || []);
+                    setRounds(data.rounds || []);
+                    setCourses(data.courses || []);
+                    setScores(data.scores || {});
+                    setExpenses(data.expenses || []);
+                    setBets(data.bets || []);
+                }
+            }, []);
+
+            // Save data to localStorage whenever it changes
+            useEffect(() => {
+                const data = { players, rounds, courses, scores, expenses, bets };
+                localStorage.setItem('golfTripData', JSON.stringify(data));
+            }, [players, rounds, courses, scores, expenses, bets]);
+
+            const addPlayer = () => {
+                if (newPlayerName && newPlayerHandicap) {
+                    const newPlayer = {
+                        id: Date.now(),
+                        name: newPlayerName,
+                        handicap: parseFloat(newPlayerHandicap),
+                        ghin: newPlayerGHIN
+                    };
+                    setPlayers([...players, newPlayer]);
+                    setNewPlayerName('');
+                    setNewPlayerHandicap('');
+                    setNewPlayerGHIN('');
+                }
+            };
+
+            const lookupGHIN = async (ghin) => {
+                // Note: GHIN/NCGA API requires authentication and is not publicly accessible
+                // This is a placeholder that explains the limitation
+                alert('GHIN lookup requires authentication with the NCGA/USGA system. Players will need to manually enter their handicap index from their GHIN account at ghin.com');
+                return null;
+            };
+
+            const calculateCourseHandicap = (handicapIndex, slopeRating, courseRating, par) => {
+                // Course Handicap = Handicap Index × (Slope Rating ÷ 113) + (Course Rating - Par)
+                return Math.round(handicapIndex * (slopeRating / 113) + (courseRating - par));
+            };
+
+            const removePlayer = (id) => {
+                setPlayers(players.filter(p => p.id !== id));
+            };
+
+            const addRound = (courseId) => {
+                const course = courses.find(c => c.id === courseId);
+                if (!course) return;
+                
+                const newRound = {
+                    id: Date.now(),
+                    courseId: courseId,
+                    name: `Round ${rounds.length + 1}`,
+                    date: new Date().toISOString().split('T')[0],
+                    courseName: course.name,
+                    tees: course.defaultTees || 'White'
+                };
+                setRounds([...rounds, newRound]);
+            };
+
+            const addCourse = (courseData) => {
+                const newCourse = {
+                    id: Date.now(),
+                    ...courseData
+                };
+                setCourses([...courses, newCourse]);
+                return newCourse;
+            };
+
+            const updateScore = (roundId, playerId, gross) => {
+                const key = `${roundId}-${playerId}`;
+                setScores({
+                    ...scores,
+                    [key]: { gross: parseInt(gross) || 0 }
+                });
+            };
+
+            const getNetScore = (gross, handicapIndex, round) => {
+                if (!round) return gross - handicapIndex;
+                
+                const course = courses.find(c => c.id === round.courseId);
+                if (!course) return gross - handicapIndex;
+                
+                const teeData = course.tees.find(t => t.name === round.tees);
+                if (!teeData) return gross - handicapIndex;
+                
+                const courseHandicap = calculateCourseHandicap(
+                    handicapIndex,
+                    teeData.slope,
+                    teeData.rating,
+                    course.par
+                );
+                
+                return gross - courseHandicap;
+            };
+
+            const addExpense = (description, amount, paidBy, splitAmong) => {
+                const newExpense = {
+                    id: Date.now(),
+                    description,
+                    amount: parseFloat(amount),
+                    paidBy,
+                    splitAmong: splitAmong.length > 0 ? splitAmong : players.map(p => p.id)
+                };
+                setExpenses([...expenses, newExpense]);
+            };
+
+            const addBet = (description, amount, participants, winner) => {
+                const newBet = {
+                    id: Date.now(),
+                    description,
+                    amount: parseFloat(amount),
+                    participants,
+                    winner
+                };
+                setBets([...bets, newBet]);
+            };
+
+            const calculateSettlement = () => {
+                const balances = {};
+                players.forEach(player => {
+                    balances[player.id] = 0;
+                });
+
+                // Calculate expense balances
+                expenses.forEach(expense => {
+                    const splitCount = expense.splitAmong.length;
+                    const amountPerPerson = expense.amount / splitCount;
+                    
+                    balances[expense.paidBy] += expense.amount;
+                    expense.splitAmong.forEach(personId => {
+                        balances[personId] -= amountPerPerson;
+                    });
+                });
+
+                // Calculate bet balances
+                bets.forEach(bet => {
+                    if (bet.winner) {
+                        const losers = bet.participants.filter(p => p !== bet.winner);
+                        const amountPerLoser = bet.amount / losers.length;
+                        
+                        balances[bet.winner] += bet.amount;
+                        losers.forEach(loserId => {
+                            balances[loserId] -= amountPerLoser;
+                        });
+                    }
+                });
+
+                return balances;
+            };
+
+            const CoursesTab = () => {
+                const [searchTerm, setSearchTerm] = useState('');
+                const [searchCity, setSearchCity] = useState('Palm Springs');
+                const [searchState, setSearchState] = useState('CA');
+                const [searchResults, setSearchResults] = useState([]);
+                const [isSearching, setIsSearching] = useState(false);
+                const [manualCourse, setManualCourse] = useState({
+                    name: '',
+                    city: '',
+                    state: '',
+                    par: 72,
+                    defaultTees: 'White',
+                    tees: [
+                        { name: 'Black', rating: 74.5, slope: 140 },
+                        { name: 'Blue', rating: 72.5, slope: 130 },
+                        { name: 'White', rating: 70.5, slope: 120 },
+                        { name: 'Red', rating: 68.5, slope: 115 }
+                    ]
+                });
+
+                const searchCourses = async () => {
+                    setIsSearching(true);
+                    try {
+                        const query = searchTerm || `${searchCity}, ${searchState} golf courses`;
+                        const response = await fetch(`https://api.anthropic.com/v1/messages`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                model: 'claude-sonnet-4-20250514',
+                                max_tokens: 1000,
+                                messages: [{
+                                    role: 'user',
+                                    content: `Find golf courses in ${query}. For each course, provide: name, city, state, par, and tee information (rating and slope for Black, Blue, White, Red tees if available). Format as JSON array with structure: [{name, city, state, par, tees: [{name, rating, slope}]}]. Only return the JSON, no other text.`
+                                }]
+                            })
+                        });
+
+                        const data = await response.json();
+                        const content = data.content.find(c => c.type === 'text')?.text || '';
+                        
+                        try {
+                            const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                            const results = JSON.parse(cleaned);
+                            setSearchResults(Array.isArray(results) ? results : []);
+                        } catch (e) {
+                            alert('Could not parse course data. Please add courses manually.');
+                            setSearchResults([]);
+                        }
+                    } catch (error) {
+                        alert('Search failed. Please add courses manually or try again.');
+                    }
+                    setIsSearching(false);
+                };
+
+                const addManualCourse = () => {
+                    if (manualCourse.name && manualCourse.city && manualCourse.state) {
+                        addCourse(manualCourse);
+                        setManualCourse({
+                            name: '',
+                            city: '',
+                            state: '',
+                            par: 72,
+                            defaultTees: 'White',
+                            tees: [
+                                { name: 'Black', rating: 74.5, slope: 140 },
+                                { name: 'Blue', rating: 72.5, slope: 130 },
+                                { name: 'White', rating: 70.5, slope: 120 },
+                                { name: 'Red', rating: 68.5, slope: 115 }
+                            ]
+                        });
+                    }
+                };
+
+                const updateTee = (index, field, value) => {
+                    const newTees = [...manualCourse.tees];
+                    newTees[index] = { ...newTees[index], [field]: parseFloat(value) || 0 };
+                    setManualCourse({ ...manualCourse, tees: newTees });
+                };
+
+                return (
+                    <div>
+                        <div className="desert-card rounded-lg shadow-lg p-6 mb-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">🏜️ Search Palm Springs Courses</h2>
+                            <div className="space-y-3">
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Course name or search term"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="border-2 border-amber-200 rounded px-3 py-2 flex-1"
+                                    />
+                                </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="City"
+                                        value={searchCity}
+                                        onChange={(e) => setSearchCity(e.target.value)}
+                                        className="border-2 border-amber-200 rounded px-3 py-2 flex-1"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="State"
+                                        value={searchState}
+                                        onChange={(e) => setSearchState(e.target.value)}
+                                        className="border-2 border-amber-200 rounded px-3 py-2 w-24"
+                                    />
+                                    <button
+                                        onClick={searchCourses}
+                                        disabled={isSearching}
+                                        className="sunset-gradient text-white px-6 py-2 rounded hover:opacity-90 disabled:opacity-50"
+                                    >
+                                        {isSearching ? 'Searching...' : 'Search'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {searchResults.length > 0 && (
+                                <div className="mt-4 space-y-2">
+                                    <h3 className="font-semibold text-amber-900">Search Results:</h3>
+                                    {searchResults.map((result, idx) => (
+                                        <div key={idx} className="bg-amber-50 p-3 rounded border border-amber-200">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="font-semibold">{result.name}</div>
+                                                    <div className="text-sm text-gray-600">
+                                                        {result.city}, {result.state} • Par {result.par}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        addCourse({ ...result, defaultTees: 'White' });
+                                                        setSearchResults([]);
+                                                    }}
+                                                    className="bg-amber-500 text-white px-3 py-1 rounded text-sm hover:bg-amber-600"
+                                                >
+                                                    Add Course
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="desert-card rounded-lg shadow-lg p-6 mb-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">➕ Add Course Manually</h2>
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <input
+                                        type="text"
+                                        placeholder="Course Name"
+                                        value={manualCourse.name}
+                                        onChange={(e) => setManualCourse({...manualCourse, name: e.target.value})}
+                                        className="border-2 border-amber-200 rounded px-3 py-2"
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="Par"
+                                        value={manualCourse.par}
+                                        onChange={(e) => setManualCourse({...manualCourse, par: parseInt(e.target.value) || 72})}
+                                        className="border-2 border-amber-200 rounded px-3 py-2"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="City"
+                                        value={manualCourse.city}
+                                        onChange={(e) => setManualCourse({...manualCourse, city: e.target.value})}
+                                        className="border-2 border-amber-200 rounded px-3 py-2"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="State"
+                                        value={manualCourse.state}
+                                        onChange={(e) => setManualCourse({...manualCourse, state: e.target.value})}
+                                        className="border-2 border-amber-200 rounded px-3 py-2"
+                                    />
+                                </div>
+
+                                <div className="mt-4">
+                                    <h3 className="font-semibold mb-2 text-amber-900">Tee Information</h3>
+                                    <div className="space-y-2">
+                                        {manualCourse.tees.map((tee, idx) => (
+                                            <div key={idx} className="grid grid-cols-3 gap-2 items-center">
+                                                <span className="font-medium">{tee.name} Tees:</span>
+                                                <input
+                                                    type="number"
+                                                    step="0.1"
+                                                    placeholder="Rating"
+                                                    value={tee.rating}
+                                                    onChange={(e) => updateTee(idx, 'rating', e.target.value)}
+                                                    className="border-2 border-amber-200 rounded px-2 py-1"
+                                                />
+                                                <input
+                                                    type="number"
+                                                    placeholder="Slope"
+                                                    value={tee.slope}
+                                                    onChange={(e) => updateTee(idx, 'slope', e.target.value)}
+                                                    className="border-2 border-amber-200 rounded px-2 py-1"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={addManualCourse}
+                                    className="sunset-gradient text-white px-4 py-2 rounded hover:opacity-90 w-full"
+                                >
+                                    Add Course
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="desert-card rounded-lg shadow-lg p-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">🏌️ Your Courses</h2>
+                            <div className="space-y-3">
+                                {courses.map(course => (
+                                    <div key={course.id} className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-lg border-l-4 border-amber-500">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <div className="font-bold text-lg">{course.name}</div>
+                                                <div className="text-sm text-gray-600">
+                                                    {course.city}, {course.state} • Par {course.par}
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setCourses(courses.filter(c => c.id !== course.id))}
+                                                className="text-red-600 hover:text-red-800 text-sm"
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-sm mt-3">
+                                            {course.tees.map(tee => (
+                                                <div key={tee.name} className="bg-white bg-opacity-50 p-2 rounded">
+                                                    <span className="font-semibold">{tee.name}:</span> {tee.rating}/{tee.slope}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                                {courses.length === 0 && (
+                                    <div className="text-center text-gray-500 py-8">
+                                        No courses added yet. Search or add courses manually above!
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const ScoresTab = () => (
+                <div>
+                    <div className="desert-card rounded-lg shadow-lg p-6 mb-6">
+                        <h2 className="text-2xl font-bold sand-text mb-4">👥 Players</h2>
+                        <div className="bg-amber-50 p-4 rounded-lg mb-4 border-l-4 border-amber-500">
+                            <p className="text-sm text-amber-900">
+                                <strong>GHIN Lookup:</strong> For automatic handicap lookup, players can find their Handicap Index at 
+                                <a href="https://www.ghin.com" target="_blank" className="text-blue-600 underline ml-1">ghin.com</a>. 
+                                The GHIN API requires authentication and cannot be accessed directly from this app.
+                            </p>
+                        </div>
+                        <div className="space-y-2 mb-4">
+                            <input
+                                type="text"
+                                placeholder="Player name"
+                                value={newPlayerName}
+                                onChange={(e) => setNewPlayerName(e.target.value)}
+                                className="border-2 border-amber-200 rounded px-3 py-2 w-full"
+                            />
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="GHIN # (optional)"
+                                    value={newPlayerGHIN}
+                                    onChange={(e) => setNewPlayerGHIN(e.target.value)}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 flex-1"
+                                />
+                                <input
+                                    type="number"
+                                    step="0.1"
+                                    placeholder="Handicap Index"
+                                    value={newPlayerHandicap}
+                                    onChange={(e) => setNewPlayerHandicap(e.target.value)}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 flex-1"
+                                />
+                            </div>
+                            <button
+                                onClick={addPlayer}
+                                className="sunset-gradient text-white px-4 py-2 rounded hover:opacity-90 w-full"
+                            >
+                                Add Player
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {players.map(player => (
+                                <div key={player.id} className="flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50 p-3 rounded-lg">
+                                    <div>
+                                        <span className="font-medium text-amber-900">{player.name}</span>
+                                        {player.ghin && (
+                                            <span className="text-xs text-gray-500 ml-2">GHIN: {player.ghin}</span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-amber-700 font-semibold">Index: {player.handicap}</span>
+                                        <button
+                                            onClick={() => removePlayer(player.id)}
+                                            className="text-red-500 hover:text-red-700"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="desert-card rounded-lg shadow-lg p-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-2xl font-bold sand-text">⛳ Rounds & Scores</h2>
+                        </div>
+
+                        {courses.length === 0 ? (
+                            <div className="bg-amber-50 p-6 rounded-lg text-center border-2 border-dashed border-amber-300">
+                                <p className="text-amber-900 font-semibold">Please add courses first!</p>
+                                <p className="text-sm text-amber-700 mt-2">Go to the Courses tab to search and add your Palm Springs courses.</p>
+                            </div>
+                        ) : (
+                            <div className="mb-4 bg-amber-50 p-4 rounded-lg">
+                                <label className="block text-sm font-medium text-amber-900 mb-2">Add Round for:</label>
+                                <div className="flex gap-2">
+                                    <select 
+                                        className="border-2 border-amber-200 rounded px-3 py-2 flex-1"
+                                        onChange={(e) => e.target.value && addRound(e.target.value)}
+                                        defaultValue=""
+                                    >
+                                        <option value="">Select a course...</option>
+                                        {courses.map(course => (
+                                            <option key={course.id} value={course.id}>
+                                                {course.name} - Par {course.par}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {rounds.map(round => {
+                            const course = courses.find(c => c.id === round.courseId);
+                            if (!course) return null;
+                            
+                            return (
+                                <div key={round.id} className="mb-6 border-b-2 border-amber-200 pb-6">
+                                    <div className="bg-gradient-to-r from-amber-100 to-orange-100 p-4 rounded-lg mb-3">
+                                        <h3 className="text-xl font-bold text-amber-900">{round.name}</h3>
+                                        <div className="text-sm text-amber-700">
+                                            {course.name} • {round.date} • Par {course.par}
+                                        </div>
+                                        <div className="mt-2">
+                                            <label className="text-sm font-medium text-amber-900 mr-2">Tees:</label>
+                                            <select
+                                                value={round.tees}
+                                                onChange={(e) => {
+                                                    const updatedRounds = rounds.map(r => 
+                                                        r.id === round.id ? { ...r, tees: e.target.value } : r
+                                                    );
+                                                    setRounds(updatedRounds);
+                                                }}
+                                                className="border-2 border-amber-300 rounded px-2 py-1"
+                                            >
+                                                {course.tees.map(tee => (
+                                                    <option key={tee.name} value={tee.name}>
+                                                        {tee.name} ({tee.rating}/{tee.slope})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead>
+                                                <tr className="bg-gradient-to-r from-amber-100 to-orange-100">
+                                                    <th className="p-2 text-left">Player</th>
+                                                    <th className="p-2 text-center">Index</th>
+                                                    <th className="p-2 text-center">Course HCP</th>
+                                                    <th className="p-2 text-center">Gross Score</th>
+                                                    <th className="p-2 text-center">Net Score</th>
+                                                    <th className="p-2 text-center">vs Par</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {players.map(player => {
+                                                    const key = `${round.id}-${player.id}`;
+                                                    const gross = scores[key]?.gross || 0;
+                                                    const teeData = course.tees.find(t => t.name === round.tees);
+                                                    const courseHcp = teeData ? calculateCourseHandicap(
+                                                        player.handicap,
+                                                        teeData.slope,
+                                                        teeData.rating,
+                                                        course.par
+                                                    ) : Math.round(player.handicap);
+                                                    const net = gross > 0 ? gross - courseHcp : 0;
+                                                    const vsPar = gross > 0 ? gross - course.par : '-';
+                                                    
+                                                    return (
+                                                        <tr key={player.id} className="border-b border-amber-100">
+                                                            <td className="p-2 font-medium">{player.name}</td>
+                                                            <td className="p-2 text-center">{player.handicap}</td>
+                                                            <td className="p-2 text-center font-bold text-blue-600">{courseHcp}</td>
+                                                            <td className="p-2">
+                                                                <input
+                                                                    type="number"
+                                                                    value={gross || ''}
+                                                                    onChange={(e) => updateScore(round.id, player.id, e.target.value)}
+                                                                    className="border-2 border-amber-200 rounded px-2 py-1 w-20 text-center"
+                                                                    placeholder="Score"
+                                                                />
+                                                            </td>
+                                                            <td className="p-2 text-center font-bold text-green-600">
+                                                                {gross > 0 ? net : '-'}
+                                                            </td>
+                                                            <td className="p-2 text-center">
+                                                                {typeof vsPar === 'number' ? (
+                                                                    <span className={vsPar > 0 ? 'text-red-600' : vsPar < 0 ? 'text-green-600' : ''}>
+                                                                        {vsPar > 0 ? '+' : ''}{vsPar}
+                                                                    </span>
+                                                                ) : vsPar}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+
+            const LeaderboardTab = () => {
+                const calculateTotals = () => {
+                    return players.map(player => {
+                        let totalGross = 0;
+                        let totalNet = 0;
+                        let roundsPlayed = 0;
+
+                        rounds.forEach(round => {
+                            const key = `${round.id}-${player.id}`;
+                            const score = scores[key];
+                            if (score && score.gross > 0) {
+                                const course = courses.find(c => c.id === round.courseId);
+                                if (course) {
+                                    const teeData = course.tees.find(t => t.name === round.tees);
+                                    if (teeData) {
+                                        const courseHcp = calculateCourseHandicap(
+                                            player.handicap,
+                                            teeData.slope,
+                                            teeData.rating,
+                                            course.par
+                                        );
+                                        totalGross += score.gross;
+                                        totalNet += score.gross - courseHcp;
+                                        roundsPlayed++;
+                                    }
+                                }
+                            }
+                        });
+
+                        return {
+                            ...player,
+                            totalGross,
+                            totalNet,
+                            roundsPlayed,
+                            avgGross: roundsPlayed > 0 ? totalGross / roundsPlayed : 0,
+                            avgNet: roundsPlayed > 0 ? totalNet / roundsPlayed : 0
+                        };
+                    }).filter(p => p.roundsPlayed > 0)
+                      .sort((a, b) => a.totalNet - b.totalNet);
+                };
+
+                const leaderboard = calculateTotals();
+
+                return (
+                    <div className="desert-card rounded-lg shadow-lg p-6">
+                        <h2 className="text-2xl font-bold sand-text mb-4">🏆 Leaderboard (Net Score)</h2>
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="bg-gradient-to-r from-amber-100 to-orange-100">
+                                        <th className="p-3 text-left">Rank</th>
+                                        <th className="p-3 text-left">Player</th>
+                                        <th className="p-3 text-center">Index</th>
+                                        <th className="p-3 text-center">Rounds</th>
+                                        <th className="p-3 text-center">Total Gross</th>
+                                        <th className="p-3 text-center">Total Net</th>
+                                        <th className="p-3 text-center">Avg Gross</th>
+                                        <th className="p-3 text-center">Avg Net</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {leaderboard.map((player, index) => (
+                                        <tr key={player.id} className={`border-b border-amber-100 ${index === 0 ? 'bg-gradient-to-r from-yellow-100 to-amber-100' : ''}`}>
+                                            <td className="p-3 font-bold">
+                                                {index === 0 && '🏆 '}
+                                                {index + 1}
+                                            </td>
+                                            <td className="p-3 font-medium">{player.name}</td>
+                                            <td className="p-3 text-center">{player.handicap}</td>
+                                            <td className="p-3 text-center">{player.roundsPlayed}</td>
+                                            <td className="p-3 text-center">{player.totalGross}</td>
+                                            <td className="p-3 text-center font-bold text-green-600">{player.totalNet}</td>
+                                            <td className="p-3 text-center">{player.avgGross.toFixed(1)}</td>
+                                            <td className="p-3 text-center font-bold">{player.avgNet.toFixed(1)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            };
+
+            const ExpensesTab = () => {
+                const [newExpense, setNewExpense] = useState({
+                    description: '',
+                    amount: '',
+                    paidBy: '',
+                    splitAmong: []
+                });
+
+                const handleAddExpense = () => {
+                    if (newExpense.description && newExpense.amount && newExpense.paidBy) {
+                        addExpense(
+                            newExpense.description,
+                            newExpense.amount,
+                            newExpense.paidBy,
+                            newExpense.splitAmong
+                        );
+                        setNewExpense({ description: '', amount: '', paidBy: '', splitAmong: [] });
+                    }
+                };
+
+                const toggleSplitPlayer = (playerId) => {
+                    if (newExpense.splitAmong.includes(playerId)) {
+                        setNewExpense({
+                            ...newExpense,
+                            splitAmong: newExpense.splitAmong.filter(id => id !== playerId)
+                        });
+                    } else {
+                        setNewExpense({
+                            ...newExpense,
+                            splitAmong: [...newExpense.splitAmong, playerId]
+                        });
+                    }
+                };
+
+                const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+
+                return (
+                    <div>
+                        <div className="desert-card rounded-lg shadow-lg p-6 mb-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">💰 Add Expense</h2>
+                            <div className="space-y-3">
+                                <input
+                                    type="text"
+                                    placeholder="Description (e.g., Airbnb, Tee Time)"
+                                    value={newExpense.description}
+                                    onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 w-full"
+                                />
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="Amount"
+                                    value={newExpense.amount}
+                                    onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 w-full"
+                                />
+                                <select
+                                    value={newExpense.paidBy}
+                                    onChange={(e) => setNewExpense({...newExpense, paidBy: e.target.value})}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 w-full"
+                                >
+                                    <option value="">Who paid?</option>
+                                    {players.map(player => (
+                                        <option key={player.id} value={player.id}>{player.name}</option>
+                                    ))}
+                                </select>
+                                <div>
+                                    <p className="mb-2 text-sm sand-text">Split among (leave empty for all players):</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {players.map(player => (
+                                            <button
+                                                key={player.id}
+                                                onClick={() => toggleSplitPlayer(player.id)}
+                                                className={`px-3 py-1 rounded ${
+                                                    newExpense.splitAmong.includes(player.id)
+                                                        ? 'sunset-gradient text-white'
+                                                        : 'bg-amber-100 text-amber-900'
+                                                }`}
+                                            >
+                                                {player.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={handleAddExpense}
+                                    className="sunset-gradient text-white px-4 py-2 rounded hover:opacity-90 w-full"
+                                >
+                                    Add Expense
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="desert-card rounded-lg shadow-lg p-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-2xl font-bold sand-text">Expenses</h2>
+                                <div className="text-xl font-bold text-amber-600">
+                                    Total: ${totalExpenses.toFixed(2)}
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                {expenses.map(expense => {
+                                    const payer = players.find(p => p.id === expense.paidBy);
+                                    const splitNames = expense.splitAmong.map(id => 
+                                        players.find(p => p.id === id)?.name
+                                    ).filter(Boolean);
+                                    
+                                    return (
+                                        <div key={expense.id} className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-lg border-l-4 border-amber-500">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="font-semibold text-amber-900">{expense.description}</div>
+                                                    <div className="text-sm text-amber-700">
+                                                        Paid by: {payer?.name} | Split: {splitNames.length > 0 ? splitNames.join(', ') : 'Everyone'}
+                                                    </div>
+                                                </div>
+                                                <div className="text-lg font-bold text-orange-600">${expense.amount.toFixed(2)}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const BetsTab = () => {
+                const [newBet, setNewBet] = useState({
+                    description: '',
+                    amount: '',
+                    participants: [],
+                    winner: ''
+                });
+
+                const handleAddBet = () => {
+                    if (newBet.description && newBet.amount && newBet.participants.length > 0) {
+                        addBet(
+                            newBet.description,
+                            newBet.amount,
+                            newBet.participants,
+                            newBet.winner
+                        );
+                        setNewBet({ description: '', amount: '', participants: [], winner: '' });
+                    }
+                };
+
+                const toggleParticipant = (playerId) => {
+                    if (newBet.participants.includes(playerId)) {
+                        setNewBet({
+                            ...newBet,
+                            participants: newBet.participants.filter(id => id !== playerId)
+                        });
+                    } else {
+                        setNewBet({
+                            ...newBet,
+                            participants: [...newBet.participants, playerId]
+                        });
+                    }
+                };
+
+                return (
+                    <div>
+                        <div className="desert-card rounded-lg shadow-lg p-6 mb-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">🎯 Add Side Bet</h2>
+                            <div className="space-y-3">
+                                <input
+                                    type="text"
+                                    placeholder="Bet description (e.g., Closest to pin, Longest drive)"
+                                    value={newBet.description}
+                                    onChange={(e) => setNewBet({...newBet, description: e.target.value})}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 w-full"
+                                />
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="Amount per person"
+                                    value={newBet.amount}
+                                    onChange={(e) => setNewBet({...newBet, amount: e.target.value})}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 w-full"
+                                />
+                                <div>
+                                    <p className="mb-2 text-sm sand-text">Participants:</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {players.map(player => (
+                                            <button
+                                                key={player.id}
+                                                onClick={() => toggleParticipant(player.id)}
+                                                className={`px-3 py-1 rounded ${
+                                                    newBet.participants.includes(player.id)
+                                                        ? 'sunset-gradient text-white'
+                                                        : 'bg-amber-100 text-amber-900'
+                                                }`}
+                                            >
+                                                {player.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <select
+                                    value={newBet.winner}
+                                    onChange={(e) => setNewBet({...newBet, winner: e.target.value})}
+                                    className="border-2 border-amber-200 rounded px-3 py-2 w-full"
+                                >
+                                    <option value="">Winner (optional - set later)</option>
+                                    {newBet.participants.map(pId => {
+                                        const player = players.find(p => p.id === pId);
+                                        return player ? <option key={player.id} value={player.id}>{player.name}</option> : null;
+                                    })}
+                                </select>
+                                <button
+                                    onClick={handleAddBet}
+                                    className="sunset-gradient text-white px-4 py-2 rounded hover:opacity-90 w-full"
+                                >
+                                    Add Bet
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="desert-card rounded-lg shadow-lg p-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">Side Bets</h2>
+                            <div className="space-y-2">
+                                {bets.map(bet => {
+                                    const participantNames = bet.participants.map(id => 
+                                        players.find(p => p.id === id)?.name
+                                    ).filter(Boolean);
+                                    const winner = players.find(p => p.id === bet.winner);
+                                    const potSize = bet.amount * bet.participants.length;
+                                    
+                                    return (
+                                        <div key={bet.id} className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-lg border-l-4 border-orange-500">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div className="font-semibold text-amber-900">{bet.description}</div>
+                                                <div className="text-lg font-bold text-orange-600">
+                                                    Pot: ${potSize.toFixed(2)}
+                                                </div>
+                                            </div>
+                                            <div className="text-sm text-amber-700">
+                                                Participants: {participantNames.join(', ')} (${bet.amount} each)
+                                            </div>
+                                            {winner && (
+                                                <div className="mt-2 text-green-600 font-semibold">
+                                                    Winner: {winner.name}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const SettlementTab = () => {
+                const balances = calculateSettlement();
+                const settlements = [];
+
+                // Create a copy of balances for calculation
+                const balancesCopy = {...balances};
+                
+                // Calculate who owes whom
+                const debtors = Object.entries(balancesCopy)
+                    .filter(([_, balance]) => balance < 0)
+                    .sort((a, b) => a[1] - b[1]);
+                
+                const creditors = Object.entries(balancesCopy)
+                    .filter(([_, balance]) => balance > 0)
+                    .sort((a, b) => b[1] - a[1]);
+
+                let dIdx = 0;
+                let cIdx = 0;
+
+                while (dIdx < debtors.length && cIdx < creditors.length) {
+                    const [debtorId, debtAmount] = debtors[dIdx];
+                    const [creditorId, creditAmount] = creditors[cIdx];
+                    
+                    const debtor = players.find(p => p.id === debtorId);
+                    const creditor = players.find(p => p.id === creditorId);
+                    
+                    const amount = Math.min(Math.abs(debtAmount), creditAmount);
+                    
+                    settlements.push({
+                        from: debtor?.name,
+                        to: creditor?.name,
+                        amount
+                    });
+                    
+                    debtors[dIdx][1] += amount;
+                    creditors[cIdx][1] -= amount;
+                    
+                    if (Math.abs(debtors[dIdx][1]) < 0.01) dIdx++;
+                    if (Math.abs(creditors[cIdx][1]) < 0.01) cIdx++;
+                }
+
+                return (
+                    <div>
+                        <div className="desert-card rounded-lg shadow-lg p-6 mb-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">💵 Individual Balances</h2>
+                            <div className="space-y-2">
+                                {players.map(player => {
+                                    const balance = balances[player.id] || 0;
+                                    return (
+                                        <div key={player.id} className="flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50 p-3 rounded-lg">
+                                            <span className="font-medium text-amber-900">{player.name}</span>
+                                            <span className={`font-bold ${balance > 0 ? 'text-green-600' : balance < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                                                {balance > 0 ? '+' : ''}${balance.toFixed(2)}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <div className="desert-card rounded-lg shadow-lg p-6">
+                            <h2 className="text-2xl font-bold sand-text mb-4">🤝 Settlement Transactions</h2>
+                            {settlements.length > 0 ? (
+                                <div className="space-y-3">
+                                    {settlements.map((settlement, index) => (
+                                        <div key={index} className="bg-gradient-to-r from-orange-100 to-amber-100 p-4 rounded-lg border-l-4 border-orange-500">
+                                            <div className="font-semibold text-amber-900">
+                                                {settlement.from} → {settlement.to}
+                                            </div>
+                                            <div className="text-2xl font-bold text-orange-600">
+                                                ${settlement.amount.toFixed(2)}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-amber-700 text-center py-8 bg-amber-50 rounded-lg">
+                                    All settled up! 🎉
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            const tabs = [
+                { id: 'courses', label: 'Courses', component: CoursesTab },
+                { id: 'scores', label: 'Scores', component: ScoresTab },
+                { id: 'leaderboard', label: 'Leaderboard', component: LeaderboardTab },
+                { id: 'expenses', label: 'Expenses', component: ExpensesTab },
+                { id: 'bets', label: 'Side Bets', component: BetsTab },
+                { id: 'settlement', label: 'Settlement', component: SettlementTab }
+            ];
+
+            const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component;
+
+            return (
+                <div className="min-h-screen palm-bg">
+                    <div className="sunset-gradient text-white py-8 shadow-xl">
+                        <div className="container mx-auto px-4">
+                            <h1 className="text-4xl font-bold mb-2">🌴 Palm Springs Golf Trip 2026</h1>
+                            <p className="text-amber-100 mt-1">Track scores, courses, bets, and expenses</p>
+                        </div>
+                    </div>
+
+                    <div className="container mx-auto px-4 py-6">
+                        <div className="desert-card rounded-lg shadow-lg mb-6">
+                            <div className="flex overflow-x-auto">
+                                {tabs.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`px-6 py-4 font-semibold whitespace-nowrap transition-colors ${
+                                            activeTab === tab.id
+                                                ? 'tab-active'
+                                                : 'text-gray-600 hover:text-amber-700'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {ActiveComponent && <ActiveComponent />}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<GolfTripTracker />, document.getElementById('root'));
+    </script>
+</body>
+</html>
